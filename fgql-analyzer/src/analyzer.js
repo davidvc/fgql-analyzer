@@ -23,6 +23,7 @@ export async function analyzeSchema(schemaContent, filePath) {
       node.fields?.forEach(field => {
         fields.set(field.name.value, {
           name: field.name.value,
+          type: extractFieldType(field.type),
           directives: field.directives || []
         });
       });
@@ -31,7 +32,8 @@ export async function analyzeSchema(schemaContent, filePath) {
         name: typeName,
         fields,
         isExtension: false,
-        directives: node.directives || []
+        directives: node.directives || [],
+        keyFields: extractKeyFields(node.directives)
       });
     },
     
@@ -41,15 +43,21 @@ export async function analyzeSchema(schemaContent, filePath) {
         name: typeName,
         fields: new Map(),
         isExtension: true,
-        directives: []
+        directives: [],
+        keyFields: []
       };
       
       node.fields?.forEach(field => {
         existingType.fields.set(field.name.value, {
           name: field.name.value,
+          type: extractFieldType(field.type),
           directives: field.directives || []
         });
       });
+      
+      // Merge directives and extract key fields
+      existingType.directives = [...existingType.directives, ...node.directives];
+      existingType.keyFields = [...existingType.keyFields, ...extractKeyFields(node.directives)];
       
       analysis.types.set(typeName, existingType);
     }
@@ -59,6 +67,45 @@ export async function analyzeSchema(schemaContent, filePath) {
   analysis.types.forEach((type, typeName) => {
     // Determine subgraph from schema comments or file path
     const subgraph = extractSubgraph(schemaContent, filePath);
+    
+    // Add dependencies for @key fields
+    // Track key fields as dependencies for entity resolution
+    if (type.keyFields.length > 0) {
+      type.keyFields.forEach(keyField => {
+        // Check if this field exists in the current type
+        const fieldExists = type.fields.has(keyField);
+        
+        // For extensions, create dependencies on key fields from the base type
+        if (type.isExtension) {
+          analysis.dependencies.push({
+            dependingType: typeName,
+            dependingField: '_entity', // Special field representing entity resolution
+            dependingSubgraph: subgraph,
+            dependedType: typeName,
+            dependedField: keyField,
+            directive: 'key',
+            fieldPath: keyField
+          });
+        }
+        
+        // If the key field is marked as @external, it's a dependency on another subgraph
+        if (fieldExists) {
+          const field = type.fields.get(keyField);
+          const isExternal = field.directives.some(d => d.name.value === 'external');
+          if (isExternal) {
+            analysis.dependencies.push({
+              dependingType: typeName,
+              dependingField: keyField,
+              dependingSubgraph: subgraph,
+              dependedType: typeName,
+              dependedField: keyField,
+              directive: 'external',
+              fieldPath: keyField
+            });
+          }
+        }
+      });
+    }
     
     type.fields.forEach((field, fieldName) => {
       field.directives.forEach(directive => {
@@ -72,13 +119,15 @@ export async function analyzeSchema(schemaContent, filePath) {
             const dependencies = parseFieldSpec(fieldSpec);
             
             dependencies.forEach(dep => {
+              const { actualType, isKeyField } = resolveTypeAndCheckKeyField(dep, type, typeName, analysis);
+              
               analysis.dependencies.push({
                 dependingType: typeName,
                 dependingField: fieldName,
                 dependingSubgraph: subgraph,
-                dependedType: dep.type || typeName, // If no type specified, it's the same type
+                dependedType: actualType,
                 dependedField: dep.field,
-                directive: directiveName,
+                directive: isKeyField ? 'key' : directiveName,
                 fieldPath: dep.path
               });
             });
@@ -98,13 +147,15 @@ export async function analyzeSchema(schemaContent, filePath) {
             const dependencies = parseFieldSpec(fieldSpec);
             
             dependencies.forEach(dep => {
+              const { actualType, isKeyField } = resolveTypeAndCheckKeyField(dep, type, typeName, analysis);
+              
               analysis.dependencies.push({
                 dependingType: typeName,
                 dependingField: fieldName,
                 dependingSubgraph: fieldSubgraph,
-                dependedType: dep.type || typeName,
+                dependedType: actualType,
                 dependedField: dep.field,
-                directive: 'requires',
+                directive: isKeyField ? 'key' : 'requires',
                 fieldPath: dep.path
               });
             });
@@ -117,13 +168,15 @@ export async function analyzeSchema(schemaContent, filePath) {
             const dependencies = parseFieldSpec(fieldSpec);
             
             dependencies.forEach(dep => {
+              const { actualType, isKeyField } = resolveTypeAndCheckKeyField(dep, type, typeName, analysis);
+              
               analysis.dependencies.push({
                 dependingType: typeName,
                 dependingField: fieldName,
                 dependingSubgraph: fieldSubgraph,
-                dependedType: dep.type || typeName,
+                dependedType: actualType,
                 dependedField: dep.field,
-                directive: 'provides',
+                directive: isKeyField ? 'key' : 'provides',
                 fieldPath: dep.path
               });
             });
@@ -254,4 +307,94 @@ function extractSubgraph(schemaContent, filePath) {
   }
   
   return 'unknown';
+}
+
+function extractKeyFields(directives) {
+  const keyFields = [];
+  
+  if (!directives) return keyFields;
+  
+  directives.forEach(directive => {
+    if (directive.name.value === 'key') {
+      const fieldsArg = directive.arguments?.find(arg => arg.name.value === 'fields');
+      if (fieldsArg && fieldsArg.value.value) {
+        // Parse the fields string (e.g., "id", "id sku", etc.)
+        const fields = fieldsArg.value.value.trim().split(/\s+/);
+        keyFields.push(...fields);
+      }
+    }
+  });
+  
+  return keyFields;
+}
+
+function extractFieldType(typeNode) {
+  if (!typeNode) return null;
+  
+  // Handle NonNullType (e.g., String!)
+  if (typeNode.kind === 'NonNullType') {
+    return extractFieldType(typeNode.type);
+  }
+  
+  // Handle ListType (e.g., [String])
+  if (typeNode.kind === 'ListType') {
+    return extractFieldType(typeNode.type);
+  }
+  
+  // Handle NamedType (e.g., String, Product, etc.)
+  if (typeNode.kind === 'NamedType') {
+    return typeNode.name.value;
+  }
+  
+  return null;
+}
+
+function resolveTypeAndCheckKeyField(dep, currentType, typeName, analysis) {
+  // For nested types, we need to resolve the actual type name
+  let dependedTypeInfo = currentType;
+  let actualType = typeName;
+  
+  if (dep.type) {
+    // First try exact match (the type might already be resolved)
+    dependedTypeInfo = analysis.types.get(dep.type);
+    actualType = dep.type;
+    
+    // If not found, the dep.type might be a field name
+    if (!dependedTypeInfo && dep.type !== typeName) {
+      // Look up the field in the current type to find its actual type
+      const field = currentType.fields.get(dep.type);
+      if (field && field.type) {
+        // Found the field, use its declared type
+        dependedTypeInfo = analysis.types.get(field.type);
+        actualType = field.type;
+      } else {
+        // Try to find the field in other types (for nested paths)
+        for (const [typeName, typeInfo] of analysis.types) {
+          if (typeInfo.fields.has(dep.type)) {
+            const fieldInfo = typeInfo.fields.get(dep.type);
+            if (fieldInfo.type) {
+              dependedTypeInfo = analysis.types.get(fieldInfo.type);
+              actualType = fieldInfo.type;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Last resort: try capitalization
+      if (!dependedTypeInfo) {
+        const capitalizedType = dep.type.charAt(0).toUpperCase() + dep.type.slice(1);
+        dependedTypeInfo = analysis.types.get(capitalizedType);
+        if (dependedTypeInfo) {
+          actualType = capitalizedType;
+        }
+      }
+    }
+  }
+  
+  const isKeyField = dependedTypeInfo && 
+                    dependedTypeInfo.keyFields && 
+                    dependedTypeInfo.keyFields.includes(dep.field);
+  
+  return { actualType, isKeyField: isKeyField || false };
 }

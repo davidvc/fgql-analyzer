@@ -54,7 +54,13 @@ export async function queryDependencies(type, options = {}) {
     
     // Only include dependencies where some field depends on the queried type
     // AND exclude dependencies within the same type (where depending type equals queried type)
+    // AND ensure the dependedType matches the queried type (not just any type with the same field name)
     if (isDependencyOnQueriedType && matchesField && dep.dependingType !== type) {
+      // For field-specific queries, also check that the dependedType matches
+      if (options.field && dep.dependedType && dep.dependedType !== type) {
+        // Skip this dependency - it's for a different type's field with the same name
+        return;
+      }
       dependencies.push(dep);
     }
   });
@@ -66,52 +72,26 @@ export async function queryDependencies(type, options = {}) {
 }
 
 function filterLeafDependencies(dependencies) {
-  // Group dependencies by depending field and subgraph to process each group separately
-  const grouped = {};
+  // Group dependencies by a unique key that includes all relevant fields
+  const uniqueDeps = new Map();
   
   dependencies.forEach(dep => {
-    const key = `${dep.dependingType}.${dep.dependingField}:${dep.dependingSubgraph}`;
-    if (!grouped[key]) {
-      grouped[key] = [];
+    // Create a unique key for each dependency based on all its properties
+    // This will help us deduplicate exact duplicates
+    const key = `${dep.dependingType}.${dep.dependingField}:${dep.dependingSubgraph}:${dep.dependedType}:${dep.dependedField}:${dep.directive}`;
+    
+    if (!uniqueDeps.has(key)) {
+      uniqueDeps.set(key, dep);
+    } else {
+      // If we already have this dependency, keep the one with the most complete path
+      const existing = uniqueDeps.get(key);
+      if (dep.fieldPath && (!existing.fieldPath || dep.fieldPath.length > existing.fieldPath.length)) {
+        uniqueDeps.set(key, dep);
+      }
     }
-    grouped[key].push(dep);
   });
   
-  const leafDependencies = [];
-  
-  // For each group, keep only the leaf paths
-  Object.values(grouped).forEach(group => {
-    // Sort by path length to process longer paths first
-    const sortedGroup = group.sort((a, b) => {
-      const pathA = a.fieldPath || '';
-      const pathB = b.fieldPath || '';
-      return pathB.length - pathA.length;
-    });
-    
-    // Keep track of which paths are leaf paths
-    const leafPaths = new Set();
-    
-    sortedGroup.forEach(dep => {
-      const currentPath = dep.fieldPath || `${dep.dependedType || dep.dependingType}.${dep.dependedField}`;
-      
-      // Check if this path is a prefix of any existing leaf path
-      let isPrefix = false;
-      for (const leafPath of leafPaths) {
-        if (leafPath.startsWith(currentPath + '.')) {
-          isPrefix = true;
-          break;
-        }
-      }
-      
-      // If it's not a prefix of any leaf path, it's a leaf itself
-      if (!isPrefix) {
-        leafPaths.add(currentPath);
-        leafDependencies.push(dep);
-      }
-    });
-  });
-  
-  return leafDependencies;
+  return Array.from(uniqueDeps.values());
 }
 
 export function formatDependenciesTable(dependencies) {

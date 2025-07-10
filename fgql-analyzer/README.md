@@ -2,6 +2,8 @@
 
 A CLI tool for analyzing Federated GraphQL (FGQL) schema dependencies. It parses schema files to find field dependencies created by `@requires` and `@provides` directives, caching the analysis for fast subsequent queries.
 
+Available as both a command-line tool and an MCP (Model Context Protocol) server for AI assistant integration.
+
 ## Features
 
 - **One-time Analysis**: Analyze a schema once and cache the results
@@ -144,6 +146,33 @@ The tool understands GraphQL field specifications in directives:
 - Nested fields: `"dimensions { length width height }"`
 - Deep nesting: `"order { items { product { id name } } }"`
 
+## MCP Server Usage
+
+The FGQL Analyzer can be used as an MCP tool for AI assistants. See [MCP_USAGE.md](./MCP_USAGE.md) for detailed instructions.
+
+### Quick Setup
+
+Add to your Claude Desktop configuration:
+
+```json
+{
+  "mcpServers": {
+    "fgql-analyzer": {
+      "command": "npx",
+      "args": ["fgql-analyzer-mcp"]
+    }
+  }
+}
+```
+
+### Available MCP Tools
+
+- `analyze_schema` - Analyze a Federated GraphQL schema file
+- `count_dependencies` - Get the count of dependencies on a type/field
+- `list_dependencies` - List all dependencies on a type/field
+- `list_analyzed_schemas` - List all analyzed schemas
+- `list_types` - List all types in a schema
+
 ## Development
 
 ```bash
@@ -155,6 +184,9 @@ npm test
 
 # Run the CLI locally
 node src/cli.js analyze examples/inventory-schema.graphql
+
+# Test MCP server
+node test-mcp.js
 ```
 
 ## License
