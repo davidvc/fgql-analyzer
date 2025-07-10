@@ -61,6 +61,13 @@ export async function queryDependencies(type, options = {}) {
         // Skip this dependency - it's for a different type's field with the same name
         return;
       }
+      
+      // For direct-only queries, filter out transitive dependencies
+      if (options.direct && dep.dependedType !== type) {
+        // Skip this dependency - it's not a direct dependency on the queried type
+        return;
+      }
+      
       dependencies.push(dep);
     }
   });

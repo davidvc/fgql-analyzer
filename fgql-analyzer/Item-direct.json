@@ -1,0 +1,137 @@
+[
+  {
+    "dependingType": "SellerInitiatedOfferAutomationDetails",
+    "dependingField": "computedDiscountValue",
+    "dependingSubgraph": "SIOSVC",
+    "dependedType": "Item",
+    "dependedField": "sellerPrice",
+    "directive": "requires",
+    "fieldPath": "item.sellerPrice"
+  },
+  {
+    "dependingType": "SingleSkuListing",
+    "dependingField": "motorsListingPrograms",
+    "dependingSubgraph": "MOTORSELIGIBILITYSVC",
+    "dependedType": "Item",
+    "dependedField": "sellerPrice",
+    "directive": "requires",
+    "fieldPath": "items.sellerPrice"
+  },
+  {
+    "dependingType": "SingleSkuListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "quantitySold",
+    "directive": "requires",
+    "fieldPath": "items.quantitySold"
+  },
+  {
+    "dependingType": "SingleSkuListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "quantityAvailable",
+    "directive": "requires",
+    "fieldPath": "items.quantityAvailable"
+  },
+  {
+    "dependingType": "SingleSkuListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "watchCount",
+    "directive": "requires",
+    "fieldPath": "items.watchCount"
+  },
+  {
+    "dependingType": "SingleSkuListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "sellerPrice",
+    "directive": "requires",
+    "fieldPath": "items.sellerPrice"
+  },
+  {
+    "dependingType": "SingleSkuListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "watchListEntryDetails",
+    "directive": "requires",
+    "fieldPath": "items.watchListEntryDetails"
+  },
+  {
+    "dependingType": "SingleSkuListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "variationId",
+    "directive": "requires",
+    "fieldPath": "items.variationId"
+  },
+  {
+    "dependingType": "VariationListing",
+    "dependingField": "motorsListingPrograms",
+    "dependingSubgraph": "MOTORSELIGIBILITYSVC",
+    "dependedType": "Item",
+    "dependedField": "sellerPrice",
+    "directive": "requires",
+    "fieldPath": "items.sellerPrice"
+  },
+  {
+    "dependingType": "VariationListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "quantitySold",
+    "directive": "requires",
+    "fieldPath": "items.quantitySold"
+  },
+  {
+    "dependingType": "VariationListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "quantityAvailable",
+    "directive": "requires",
+    "fieldPath": "items.quantityAvailable"
+  },
+  {
+    "dependingType": "VariationListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "watchCount",
+    "directive": "requires",
+    "fieldPath": "items.watchCount"
+  },
+  {
+    "dependingType": "VariationListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "sellerPrice",
+    "directive": "requires",
+    "fieldPath": "items.sellerPrice"
+  },
+  {
+    "dependingType": "VariationListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "watchListEntryDetails",
+    "directive": "requires",
+    "fieldPath": "items.watchListEntryDetails"
+  },
+  {
+    "dependingType": "VariationListing",
+    "dependingField": "signalsPlacements",
+    "dependingSubgraph": "SIGNALSSERVICE",
+    "dependedType": "Item",
+    "dependedField": "variationId",
+    "directive": "requires",
+    "fieldPath": "items.variationId"
+  }
+]

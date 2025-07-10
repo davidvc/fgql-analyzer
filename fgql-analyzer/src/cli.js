@@ -23,6 +23,7 @@ Commands:
     -f, --field <field>            Query specific field only
     -s, --schema <file>            Use specific schema file (default: most recent)
     -j, --json                     Output as JSON
+    -d, --direct                   Show only direct dependencies
 
   list                             List all analyzed schemas
 
@@ -91,12 +92,14 @@ program
   .option('-s, --schema <file>', 'Schema file to query (uses most recent if not specified)')
   .option('-f, --field <field>', 'Query dependencies for a specific field')
   .option('-j, --json', 'Output results as JSON')
+  .option('-d, --direct', 'Show only direct dependencies (no transitive dependencies)')
   .addHelpText('after', `
 Examples:
   $ fgq query Product                    # All fields that depend on any Product field
   $ fgq query Item --field watchCount    # Only fields that depend on Item.watchCount
   $ fgq query Product --json             # Output as JSON for scripting
-  $ fgq query Product -s myschema.graphql # Query specific schema file`)
+  $ fgq query Product -s myschema.graphql # Query specific schema file
+  $ fgq query Item --direct              # Only direct dependencies on Item fields`)
   .action(async (type, options) => {
     try {
       const results = await queryDependencies(type, options);
