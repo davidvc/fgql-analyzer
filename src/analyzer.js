@@ -205,9 +205,10 @@ export async function analyzeSchema(schemaContent, filePath) {
     // Add dependencies for @key fields
     // Track key fields as dependencies for entity resolution
     if (type.keyFields.length > 0) {
-      type.keyFields.forEach((keyField) => {
-        // Check if this field exists in the current type
-        const fieldExists = type.fields.has(keyField);
+      type.keyFields.forEach((keyFieldPath) => {
+        // For nested key fields like "seller.legacyUserId", extract the top-level field
+        const topLevelField = keyFieldPath.split('.')[0];
+        const fieldExists = type.fields.has(topLevelField);
 
         // For extensions, create dependencies on key fields from the base type
         if (type.isExtension) {
@@ -216,27 +217,27 @@ export async function analyzeSchema(schemaContent, filePath) {
             dependingField: "_entity", // Special field representing entity resolution
             dependingSubgraph: subgraph,
             dependedType: typeName,
-            dependedField: keyField,
+            dependedField: topLevelField,
             directive: "key",
-            fieldPath: keyField,
+            fieldPath: keyFieldPath,
           });
         }
 
         // If the key field is marked as @external, it's a dependency on another subgraph
         if (fieldExists) {
-          const field = type.fields.get(keyField);
+          const field = type.fields.get(topLevelField);
           const isExternal = field.directives.some(
             (d) => d.name.value === "external"
           );
           if (isExternal) {
             analysis.dependencies.push({
               dependingType: typeName,
-              dependingField: keyField,
+              dependingField: topLevelField,
               dependingSubgraph: subgraph,
               dependedType: typeName,
-              dependedField: keyField,
+              dependedField: topLevelField,
               directive: "external",
-              fieldPath: keyField,
+              fieldPath: keyFieldPath,
             });
           }
         }
@@ -580,14 +581,21 @@ function extractKeyFields(directives) {
   if (!directives) return keyFields;
 
   directives.forEach((directive) => {
-    if (directive.name.value === "key") {
-      const fieldsArg = directive.arguments?.find(
-        (arg) => arg.name.value === "fields"
+    // Handle both Federation v1 (@key) and v2 (@join__type) styles
+    if (directive.name.value === "key" || directive.name.value === "join__type") {
+      // For @key, the argument is "fields"; for @join__type, it's "key"
+      const keyArg = directive.arguments?.find(
+        (arg) => arg.name.value === "fields" || arg.name.value === "key"
       );
-      if (fieldsArg && fieldsArg.value.value) {
-        // Parse the fields string (e.g., "id", "id sku", etc.)
-        const fields = fieldsArg.value.value.trim().split(/\s+/);
-        keyFields.push(...fields);
+      if (keyArg && keyArg.value.value) {
+        // Parse the key field specification using the same logic as @requires/@provides
+        const keySpec = keyArg.value.value;
+        const parsed = parseFieldSpec(keySpec);
+        
+        // Extract all field paths from the parsed specification
+        parsed.forEach(dep => {
+          keyFields.push(dep.path);
+        });
       }
     }
   });
@@ -691,7 +699,14 @@ function resolveTypeAndCheckKeyField(dep, currentType, typeName, analysis) {
         const implType = analysis.types.get(implTypeName);
         if (implType && implType.fields.has(targetField)) {
           const isKeyField = implType.keyFields &&
-            implType.keyFields.includes(targetField);
+            implType.keyFields.some(keyFieldPath => {
+              if (keyFieldPath === targetField) return true;
+              if (fieldPath.endsWith(keyFieldPath)) {
+                const pathBefore = fieldPath.substring(0, fieldPath.length - keyFieldPath.length);
+                return pathBefore === '' || pathBefore.endsWith('.');
+              }
+              return false;
+            });
           
           results.push({
             actualType: implTypeName,
@@ -707,10 +722,24 @@ function resolveTypeAndCheckKeyField(dep, currentType, typeName, analysis) {
     }
   }
   
-  // Check if the target field is a key field
+  // Check if the field path matches any key field
+  // For nested key fields, we need to check if the full path matches
   const isKeyField = parentType &&
     parentType.keyFields &&
-    parentType.keyFields.includes(targetField);
+    parentType.keyFields.some(keyFieldPath => {
+      // Simple case: exact match (e.g., "id" matches "id")
+      if (keyFieldPath === targetField) return true;
+      
+      // Check if the dependency path ends with the key field path
+      // This handles cases where the full path matches a nested key field
+      if (fieldPath.endsWith(keyFieldPath)) {
+        // Make sure it's a proper match (not just substring)
+        const pathBefore = fieldPath.substring(0, fieldPath.length - keyFieldPath.length);
+        return pathBefore === '' || pathBefore.endsWith('.');
+      }
+      
+      return false;
+    });
   
   return {
     actualType: currentPosition,
