@@ -270,11 +270,16 @@ export async function analyzeSchema(schemaContent, filePath) {
             const fieldSpec = fieldsArg.value.value;
             const dependencies = parseFieldSpec(fieldSpec);
 
+            // For @provides, start from field's return type; for @requires, start from current type
+            const startType = directiveName === "provides" ? 
+              (field.type || typeName) : 
+              typeName;
+
             dependencies.forEach((dep) => {
               const resolutions = resolveTypeAndCheckKeyField(
                 dep,
                 type,
-                typeName,
+                startType,
                 analysis
               );
 
@@ -345,11 +350,15 @@ export async function analyzeSchema(schemaContent, filePath) {
             const fieldSpec = providesArg.value.value;
             const dependencies = parseFieldSpec(fieldSpec);
 
+            // For @provides, we need to resolve from the field's return type, not the current type
+            const fieldInfo = type.fields.get(fieldName);
+            const fieldReturnType = fieldInfo?.type;
+
             dependencies.forEach((dep) => {
               const resolutions = resolveTypeAndCheckKeyField(
                 dep,
                 type,
-                typeName,
+                fieldReturnType || typeName, // Start from field's return type for provides
                 analysis
               );
 
