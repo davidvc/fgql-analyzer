@@ -5,6 +5,8 @@ export async function analyzeSchema(schemaContent, filePath) {
   const ast = parse(schemaContent);
   const analysis = {
     types: new Map(),
+    interfaces: new Map(), // Track interfaces separately
+    implementations: new Map(), // Track which types implement which interfaces
     dependencies: [],
     metadata: {
       analyzedAt: new Date().toISOString(),
@@ -16,9 +18,42 @@ export async function analyzeSchema(schemaContent, filePath) {
 
   // First pass: collect all types and their fields
   visit(ast, {
+    InterfaceTypeDefinition(node) {
+      const interfaceName = node.name.value;
+      const fields = new Map();
+
+      node.fields?.forEach((field) => {
+        fields.set(field.name.value, {
+          name: field.name.value,
+          type: extractFieldType(field.type),
+          rawTypeNode: field.type,
+          isListType: isListType(field.type),
+          isNonNullType: isNonNullType(field.type),
+          directives: field.directives || [],
+        });
+      });
+
+      analysis.interfaces.set(interfaceName, {
+        name: interfaceName,
+        fields,
+        directives: node.directives || [],
+      });
+
+      // Also add to types for compatibility
+      analysis.types.set(interfaceName, {
+        name: interfaceName,
+        fields,
+        isInterface: true,
+        isExtension: false,
+        directives: node.directives || [],
+        keyFields: extractKeyFields(node.directives),
+      });
+    },
+
     ObjectTypeDefinition(node) {
       const typeName = node.name.value;
       const fields = new Map();
+      const interfaces = node.interfaces?.map(i => i.name.value) || [];
 
       node.fields?.forEach((field) => {
         fields.set(field.name.value, {
@@ -34,18 +69,90 @@ export async function analyzeSchema(schemaContent, filePath) {
       analysis.types.set(typeName, {
         name: typeName,
         fields,
+        isInterface: false,
         isExtension: false,
+        interfaces,
         directives: node.directives || [],
         keyFields: extractKeyFields(node.directives),
       });
+
+      // Track interface implementations
+      interfaces.forEach(interfaceName => {
+        if (!analysis.implementations.has(interfaceName)) {
+          analysis.implementations.set(interfaceName, []);
+        }
+        analysis.implementations.get(interfaceName).push(typeName);
+      });
+    },
+
+    InterfaceTypeExtension(node) {
+      const interfaceName = node.name.value;
+      const existingInterface = analysis.interfaces.get(interfaceName) || {
+        name: interfaceName,
+        fields: new Map(),
+        directives: [],
+      };
+
+      node.fields?.forEach((field) => {
+        existingInterface.fields.set(field.name.value, {
+          name: field.name.value,
+          type: extractFieldType(field.type),
+          rawTypeNode: field.type,
+          isListType: isListType(field.type),
+          isNonNullType: isNonNullType(field.type),
+          directives: field.directives || [],
+        });
+      });
+
+      existingInterface.directives = [
+        ...existingInterface.directives,
+        ...(node.directives || []),
+      ];
+
+      analysis.interfaces.set(interfaceName, existingInterface);
+
+      // Also update in types
+      const existingType = analysis.types.get(interfaceName) || {
+        name: interfaceName,
+        fields: new Map(),
+        isInterface: true,
+        isExtension: true,
+        directives: [],
+        keyFields: [],
+      };
+
+      node.fields?.forEach((field) => {
+        existingType.fields.set(field.name.value, {
+          name: field.name.value,
+          type: extractFieldType(field.type),
+          rawTypeNode: field.type,
+          isListType: isListType(field.type),
+          isNonNullType: isNonNullType(field.type),
+          directives: field.directives || [],
+        });
+      });
+
+      existingType.directives = [
+        ...existingType.directives,
+        ...(node.directives || []),
+      ];
+      existingType.keyFields = [
+        ...existingType.keyFields,
+        ...extractKeyFields(node.directives || []),
+      ];
+
+      analysis.types.set(interfaceName, existingType);
     },
 
     ObjectTypeExtension(node) {
       const typeName = node.name.value;
+      const interfaces = node.interfaces?.map(i => i.name.value) || [];
       const existingType = analysis.types.get(typeName) || {
         name: typeName,
         fields: new Map(),
+        isInterface: false,
         isExtension: true,
+        interfaces: [],
         directives: [],
         keyFields: [],
       };
@@ -61,14 +168,29 @@ export async function analyzeSchema(schemaContent, filePath) {
         });
       });
 
+      // Merge interfaces
+      if (interfaces.length > 0) {
+        existingType.interfaces = [...(existingType.interfaces || []), ...interfaces];
+        
+        // Track interface implementations
+        interfaces.forEach(interfaceName => {
+          if (!analysis.implementations.has(interfaceName)) {
+            analysis.implementations.set(interfaceName, []);
+          }
+          if (!analysis.implementations.get(interfaceName).includes(typeName)) {
+            analysis.implementations.get(interfaceName).push(typeName);
+          }
+        });
+      }
+
       // Merge directives and extract key fields
       existingType.directives = [
         ...existingType.directives,
-        ...node.directives,
+        ...(node.directives || []),
       ];
       existingType.keyFields = [
         ...existingType.keyFields,
-        ...extractKeyFields(node.directives),
+        ...extractKeyFields(node.directives || []),
       ];
 
       analysis.types.set(typeName, existingType);
@@ -149,21 +271,26 @@ export async function analyzeSchema(schemaContent, filePath) {
             const dependencies = parseFieldSpec(fieldSpec);
 
             dependencies.forEach((dep) => {
-              const { actualType, isKeyField } = resolveTypeAndCheckKeyField(
+              const resolutions = resolveTypeAndCheckKeyField(
                 dep,
                 type,
                 typeName,
                 analysis
               );
 
-              analysis.dependencies.push({
-                dependingType: typeName,
-                dependingField: fieldName,
-                dependingSubgraph: subgraph,
-                dependedType: actualType,
-                dependedField: dep.field,
-                directive: isKeyField ? "key" : directiveName,
-                fieldPath: dep.path,
+              // Handle multiple resolutions (e.g., when traversing through interfaces)
+              const resolutionArray = Array.isArray(resolutions) ? resolutions : [resolutions];
+              
+              resolutionArray.forEach(({ actualType, isKeyField }) => {
+                analysis.dependencies.push({
+                  dependingType: typeName,
+                  dependingField: fieldName,
+                  dependingSubgraph: subgraph,
+                  dependedType: actualType,
+                  dependedField: dep.field,
+                  directive: isKeyField ? "key" : directiveName,
+                  fieldPath: dep.path,
+                });
               });
             });
           }
@@ -186,21 +313,26 @@ export async function analyzeSchema(schemaContent, filePath) {
             const dependencies = parseFieldSpec(fieldSpec);
 
             dependencies.forEach((dep) => {
-              const { actualType, isKeyField } = resolveTypeAndCheckKeyField(
+              const resolutions = resolveTypeAndCheckKeyField(
                 dep,
                 type,
                 typeName,
                 analysis
               );
 
-              analysis.dependencies.push({
-                dependingType: typeName,
-                dependingField: fieldName,
-                dependingSubgraph: fieldSubgraph,
-                dependedType: actualType,
-                dependedField: dep.field,
-                directive: isKeyField ? "key" : "requires",
-                fieldPath: dep.path,
+              // Handle multiple resolutions (e.g., when traversing through interfaces)
+              const resolutionArray = Array.isArray(resolutions) ? resolutions : [resolutions];
+              
+              resolutionArray.forEach(({ actualType, isKeyField }) => {
+                analysis.dependencies.push({
+                  dependingType: typeName,
+                  dependingField: fieldName,
+                  dependingSubgraph: fieldSubgraph,
+                  dependedType: actualType,
+                  dependedField: dep.field,
+                  directive: isKeyField ? "key" : "requires",
+                  fieldPath: dep.path,
+                });
               });
             });
           }
@@ -214,21 +346,26 @@ export async function analyzeSchema(schemaContent, filePath) {
             const dependencies = parseFieldSpec(fieldSpec);
 
             dependencies.forEach((dep) => {
-              const { actualType, isKeyField } = resolveTypeAndCheckKeyField(
+              const resolutions = resolveTypeAndCheckKeyField(
                 dep,
                 type,
                 typeName,
                 analysis
               );
 
-              analysis.dependencies.push({
-                dependingType: typeName,
-                dependingField: fieldName,
-                dependingSubgraph: fieldSubgraph,
-                dependedType: actualType,
-                dependedField: dep.field,
-                directive: isKeyField ? "key" : "provides",
-                fieldPath: dep.path,
+              // Handle multiple resolutions (e.g., when traversing through interfaces)
+              const resolutionArray = Array.isArray(resolutions) ? resolutions : [resolutions];
+              
+              resolutionArray.forEach(({ actualType, isKeyField }) => {
+                analysis.dependencies.push({
+                  dependingType: typeName,
+                  dependingField: fieldName,
+                  dependingSubgraph: fieldSubgraph,
+                  dependedType: actualType,
+                  dependedField: dep.field,
+                  directive: isKeyField ? "key" : "provides",
+                  fieldPath: dep.path,
+                });
               });
             });
           }
@@ -252,6 +389,16 @@ export async function analyzeSchema(schemaContent, filePath) {
         },
       ])
     ),
+    interfaces: Object.fromEntries(
+      Array.from(analysis.interfaces.entries()).map(([key, value]) => [
+        key,
+        {
+          ...value,
+          fields: Object.fromEntries(value.fields.entries()),
+        },
+      ])
+    ),
+    implementations: Object.fromEntries(analysis.implementations.entries()),
   };
 
   // Save to cache
@@ -264,27 +411,20 @@ function parseFieldSpec(fieldSpec) {
   const dependencies = [];
   const tokens = tokenizeFieldSpec(fieldSpec);
   let currentPath = [];
-  let currentType = null;
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
 
     if (token === "{") {
-      // Entering nested selection
-      if (currentPath.length > 0) {
-        currentType = currentPath[currentPath.length - 1];
-      }
+      // Entering nested selection - path already has the field
     } else if (token === "}") {
       // Exiting nested selection
       currentPath.pop();
-      currentType =
-        currentPath.length > 0 ? currentPath[currentPath.length - 1] : null;
     } else {
       // Field name
       currentPath.push(token);
       dependencies.push({
         field: token,
-        type: currentType,
         path: [...currentPath].join("."),
       });
 
@@ -314,6 +454,8 @@ function resolveFieldTypePath(path, startingType, schema) {
 
     // Make sure the current type exists in the schema
     if (!currentType || !schema.types.has(currentType)) {
+      // If the current type is an interface, we need to find implementations
+      // For now, we'll stop here, but mark that we hit an unresolvable type
       break;
     }
 
@@ -321,6 +463,21 @@ function resolveFieldTypePath(path, startingType, schema) {
 
     // Make sure the field exists on this type
     if (!typeInfo.fields.has(fieldName)) {
+      // If this is an interface, check implementations
+      // For the purposes of dependency analysis, we'll accept that interface 
+      // implementations will have these fields
+      if (isInterfaceType(currentType, schema)) {
+        // For interfaces, we'll add a placeholder resolution
+        // The actual dependency should be on the concrete types that implement this interface
+        typeResolutionChain.push({
+          fieldName,
+          parentType: currentType,
+          fieldType: null, // Unknown type - will need to be resolved at runtime
+          isInterface: true
+        });
+        // Can't continue resolving through interface
+        break;
+      }
       break;
     }
 
@@ -337,6 +494,12 @@ function resolveFieldTypePath(path, startingType, schema) {
   }
 
   return typeResolutionChain;
+}
+
+// Helper to check if a type is an interface
+function isInterfaceType(typeName, schema) {
+  const typeInfo = schema.types.get(typeName);
+  return typeInfo && typeInfo.isInterface === true;
 }
 
 function tokenizeFieldSpec(fieldSpec) {
@@ -461,84 +624,88 @@ function isNonNullType(typeNode) {
 }
 
 function resolveTypeAndCheckKeyField(dep, currentType, typeName, analysis) {
-  // Use the more accurate type resolution logic
   const fieldPath = dep.path;
-  const typeResolutionChain = resolveFieldTypePath(
-    fieldPath,
-    typeName,
-    analysis
-  );
-
-  // If we can resolve the full path, use the last resolved type
-  if (typeResolutionChain.length > 0) {
-    const lastResolution = typeResolutionChain[typeResolutionChain.length - 1];
-    const lastFieldName = dep.field;
-
-    // Check if the last field is a key field on its parent type
-    const parentTypeInfo = analysis.types.get(lastResolution.parentType);
-    const isKeyField =
-      parentTypeInfo &&
-      parentTypeInfo.keyFields &&
-      parentTypeInfo.keyFields.includes(lastFieldName);
-
-    return {
-      actualType: lastResolution.parentType,
-      isKeyField: isKeyField || false,
-      typeResolutionChain,
-    };
-  }
-
-  // Fall back to the old logic if we can't resolve the path
-  let dependedTypeInfo = currentType;
-  let actualType = typeName;
-
-  if (dep.type) {
-    // First try exact match (the type might already be resolved)
-    dependedTypeInfo = analysis.types.get(dep.type);
-    actualType = dep.type;
-
-    // If not found, the dep.type might be a field name
-    if (!dependedTypeInfo && dep.type !== typeName) {
-      // Look up the field in the current type to find its actual type
-      const field = currentType.fields.get(dep.type);
-      if (field && field.type) {
-        // Found the field, use its declared type
-        dependedTypeInfo = analysis.types.get(field.type);
-        actualType = field.type;
-      } else {
-        // Try to find the field in other types (for nested paths)
-        for (const [typeName, typeInfo] of analysis.types) {
-          if (typeInfo.fields.has(dep.type)) {
-            const fieldInfo = typeInfo.fields.get(dep.type);
-            if (fieldInfo.type) {
-              dependedTypeInfo = analysis.types.get(fieldInfo.type);
-              actualType = fieldInfo.type;
-              break;
-            }
-          }
-        }
-      }
-
-      // Last resort: try capitalization
-      if (!dependedTypeInfo) {
-        const capitalizedType =
-          dep.type.charAt(0).toUpperCase() + dep.type.slice(1);
-        dependedTypeInfo = analysis.types.get(capitalizedType);
-        if (dependedTypeInfo) {
-          actualType = capitalizedType;
+  const pathParts = fieldPath.split('.');
+  const targetField = pathParts[pathParts.length - 1];
+  
+  // Simple approach: traverse the path to find what type contains the target field
+  let currentPosition = typeName;
+  
+  // Traverse all fields except the last one (which is our target)
+  for (let i = 0; i < pathParts.length - 1; i++) {
+    const fieldName = pathParts[i];
+    const typeInfo = analysis.types.get(currentPosition);
+    
+    if (!typeInfo) {
+      // Type not found - can't continue
+      break;
+    }
+    
+    let fieldInfo = typeInfo.fields.get(fieldName);
+    
+    // If field not found on current type, check if it's an interface
+    if (!fieldInfo && typeInfo.isInterface) {
+      // Check all implementations to find one that has this field
+      const implementations = analysis.implementations.get(currentPosition) || [];
+      
+      for (const implTypeName of implementations) {
+        const implType = analysis.types.get(implTypeName);
+        if (implType && implType.fields.has(fieldName)) {
+          // Found the field on an implementation
+          fieldInfo = implType.fields.get(fieldName);
+          // Use the field's type for next iteration
+          break;
         }
       }
     }
+    
+    if (!fieldInfo) {
+      // Field not found anywhere - stop here
+      break;
+    }
+    
+    // Move to the field's type for next iteration
+    currentPosition = fieldInfo.type;
   }
-
-  const isKeyField =
-    dependedTypeInfo &&
-    dependedTypeInfo.keyFields &&
-    dependedTypeInfo.keyFields.includes(dep.field);
-
+  
+  // currentPosition should now be the type that contains our target field
+  const parentType = analysis.types.get(currentPosition);
+  
+  // Verify the target field exists on this type
+  if (parentType && !parentType.fields.has(targetField)) {
+    // If it's an interface, check implementations
+    if (parentType.isInterface) {
+      const implementations = analysis.implementations.get(currentPosition) || [];
+      const results = [];
+      
+      for (const implTypeName of implementations) {
+        const implType = analysis.types.get(implTypeName);
+        if (implType && implType.fields.has(targetField)) {
+          const isKeyField = implType.keyFields &&
+            implType.keyFields.includes(targetField);
+          
+          results.push({
+            actualType: implTypeName,
+            isKeyField: isKeyField || false,
+            typeResolutionChain: [],
+          });
+        }
+      }
+      
+      if (results.length > 0) {
+        return results;
+      }
+    }
+  }
+  
+  // Check if the target field is a key field
+  const isKeyField = parentType &&
+    parentType.keyFields &&
+    parentType.keyFields.includes(targetField);
+  
   return {
-    actualType,
+    actualType: currentPosition,
     isKeyField: isKeyField || false,
-    typeResolutionChain: [], // Empty chain since we couldn't resolve properly
+    typeResolutionChain: [],
   };
 }
