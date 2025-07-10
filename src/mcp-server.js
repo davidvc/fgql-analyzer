@@ -76,6 +76,11 @@ class FGQLAnalyzerServer {
                 description: 'Optional: show only direct dependencies (no transitive dependencies)',
                 default: false,
               },
+              includeSameType: {
+                type: 'boolean',
+                description: 'Optional: include dependencies from fields within the same type',
+                default: false,
+              },
             },
             required: ['type'],
           },
@@ -101,6 +106,11 @@ class FGQLAnalyzerServer {
               direct: {
                 type: 'boolean',
                 description: 'Optional: show only direct dependencies (no transitive dependencies)',
+                default: false,
+              },
+              includeSameType: {
+                type: 'boolean',
+                description: 'Optional: include dependencies from fields within the same type',
                 default: false,
               },
             },
@@ -196,13 +206,14 @@ class FGQLAnalyzerServer {
   }
 
   async countDependencies(args) {
-    const { type, field, schemaFile, direct = false } = args;
+    const { type, field, schemaFile, direct = false, includeSameType = false } = args;
 
     try {
       const options = {
         field,
         schema: schemaFile,
         direct,
+        includeSameType,
       };
 
       const results = await queryDependencies(type, options);
@@ -224,13 +235,14 @@ class FGQLAnalyzerServer {
   }
 
   async listDependencies(args) {
-    const { type, field, schemaFile, direct = false } = args;
+    const { type, field, schemaFile, direct = false, includeSameType = false } = args;
 
     try {
       const options = {
         field,
         schema: schemaFile,
         direct,
+        includeSameType,
       };
 
       const results = await queryDependencies(type, options);

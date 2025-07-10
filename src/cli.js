@@ -24,6 +24,8 @@ Commands:
     -s, --schema <file>            Use specific schema file (default: most recent)
     -j, --json                     Output as JSON
     -d, --direct                   Show only direct dependencies
+    -c, --count                    Show only the count of dependencies
+    -i, --include-same-type        Include dependencies from same type
 
   list                             List all analyzed schemas
 
@@ -93,16 +95,27 @@ program
   .option('-f, --field <field>', 'Query dependencies for a specific field')
   .option('-j, --json', 'Output results as JSON')
   .option('-d, --direct', 'Show only direct dependencies (no transitive dependencies)')
+  .option('-c, --count', 'Show only the count of dependencies')
+  .option('-i, --include-same-type', 'Include dependencies from fields within the same type')
   .addHelpText('after', `
 Examples:
   $ fgq query Product                    # All fields that depend on any Product field
   $ fgq query Item --field watchCount    # Only fields that depend on Item.watchCount
   $ fgq query Product --json             # Output as JSON for scripting
   $ fgq query Product -s myschema.graphql # Query specific schema file
-  $ fgq query Item --direct              # Only direct dependencies on Item fields`)
+  $ fgq query Item --direct              # Only direct dependencies on Item fields
+  $ fgq query Product --count            # Show only the count of dependencies
+  $ fgq query Cart --include-same-type   # Include Cart fields that depend on other Cart fields`)
   .action(async (type, options) => {
     try {
       const results = await queryDependencies(type, options);
+      
+      if (options.count) {
+        // Just show the count
+        const fieldSpec = options.field ? `.${options.field}` : '';
+        console.log(`${results.length} dependencies on ${type}${fieldSpec}`);
+        return;
+      }
       
       if (results.length === 0) {
         console.log(chalk.yellow(`No dependencies found for type: ${type}`));

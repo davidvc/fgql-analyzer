@@ -12,6 +12,7 @@ export async function queryDependencies(type, options = {}) {
   }
   
   const dependencies = [];
+  const includeSameType = options.includeSameType || false;
   
   // Filter dependencies based on the queried type
   analysis.dependencies.forEach(dep => {
@@ -53,9 +54,9 @@ export async function queryDependencies(type, options = {}) {
     const matchesField = !options.field || dep.dependedField === options.field;
     
     // Only include dependencies where some field depends on the queried type
-    // AND exclude dependencies within the same type (where depending type equals queried type)
     // AND ensure the dependedType matches the queried type (not just any type with the same field name)
-    if (isDependencyOnQueriedType && matchesField && dep.dependingType !== type) {
+    // By default, exclude dependencies from the same type unless includeSameType is true
+    if (isDependencyOnQueriedType && matchesField && (includeSameType || dep.dependingType !== type)) {
       // For field-specific queries, also check that the dependedType matches
       if (options.field && dep.dependedType && dep.dependedType !== type) {
         // Skip this dependency - it's for a different type's field with the same name
