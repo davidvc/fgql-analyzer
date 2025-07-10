@@ -1,0 +1,24 @@
+# Subgraph: products
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0"
+    import: ["@key", "@shareable", "@provides", "@external", "@requires"])
+
+type Product @key(fields: "id") @key(fields: "sku") {
+  id: ID!
+  sku: String!
+  name: String!
+  price: Float!
+  weight: Float
+  dimensions: Dimensions
+}
+
+type Dimensions {
+  length: Float!
+  width: Float!
+  height: Float!
+}
+
+type Query {
+  product(id: ID!): Product
+  products: [Product!]!
+}

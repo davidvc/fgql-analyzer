@@ -1,0 +1,51 @@
+# Subgraph: reviews
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0"
+    import: ["@key", "@shareable", "@provides", "@external", "@requires"])
+
+extend type Product @key(fields: "id") {
+  id: ID! @external
+  name: String! @external
+  price: Float! @external
+  
+  # Review fields
+  reviews: [Review!]!
+  averageRating: Float!
+  
+  # Requires price to calculate value rating
+  valueRating: Float! @requires(fields: "price")
+}
+
+type Review @key(fields: "id") {
+  id: ID!
+  rating: Int!
+  comment: String
+  author: User!
+  createdAt: String!
+  
+  # Can provide product name when fetching through review
+  product: Product! @provides(fields: "name")
+  
+  # Requires product price to show if it's a good value
+  isGoodValue: Boolean! @requires(fields: "product { price }")
+}
+
+type User @key(fields: "id") {
+  id: ID!
+  username: String!
+  email: String!
+  totalReviews: Int!
+}
+
+extend type User @key(fields: "id") {
+  id: ID! @external
+  
+  # Provides username when fetching user reviews
+  reviews: [Review!]! @provides(fields: "author { username }")
+}
+
+type Query {
+  review(id: ID!): Review
+  reviewsForProduct(productId: ID!): [Review!]!
+  userReviews(userId: ID!): [Review!]!
+}

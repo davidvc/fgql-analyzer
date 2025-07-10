@@ -1,0 +1,56 @@
+# Subgraph: inventory
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0"
+    import: ["@key", "@shareable", "@provides", "@external", "@requires"])
+
+extend type Product @key(fields: "id") @key(fields: "sku") {
+  id: ID! @external
+  sku: String! @external
+  price: Float! @external
+  weight: Float @external
+  dimensions: Dimensions @external
+  
+  # Inventory fields
+  inStock: Boolean!
+  availableQuantity: Int!
+  
+  # Requires price to calculate total inventory value
+  inventoryValue: Float! @requires(fields: "price")
+  
+  # Requires weight and dimensions for shipping calculations
+  shippingClass: String! @requires(fields: "weight dimensions { length width height }")
+  estimatedShippingCost: Float! @requires(fields: "weight dimensions { length width height }")
+}
+
+type Warehouse @key(fields: "id") {
+  id: ID!
+  location: String!
+  capacity: Int!
+  
+  # Provides product name and inStock when fetching inventory
+  inventory: [InventoryItem!]! @provides(fields: "product { name inStock }")
+}
+
+type InventoryItem {
+  product: Product!
+  warehouse: Warehouse!
+  quantity: Int!
+  lastRestocked: String!
+  
+  # Requires product price to calculate total value
+  totalValue: Float! @requires(fields: "product { price }")
+  
+  # Requires product weight for shipping estimates
+  estimatedWeight: Float! @requires(fields: "product { weight }")
+}
+
+type Dimensions @external {
+  length: Float! @external
+  width: Float! @external  
+  height: Float! @external
+}
+
+type Query {
+  warehouse(id: ID!): Warehouse
+  inventoryForProduct(productId: ID!): [InventoryItem!]!
+}
