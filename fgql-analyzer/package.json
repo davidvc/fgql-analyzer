@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node src/cli.js",
     "test": "node --test tests/",
+    "test:mcp": "node test-mcp-complete.js",
     "lint": "eslint src/ tests/",
     "format": "prettier --write src/ tests/"
   },

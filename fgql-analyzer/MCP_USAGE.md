@@ -48,12 +48,14 @@ Gets the count of dependencies on a particular type or field.
 - `type` (required): The GraphQL type to query dependencies for
 - `field` (optional): Specific field within the type to query
 - `schemaFile` (optional): Specific schema file to query (uses most recent if not specified)
+- `direct` (optional): Show only direct dependencies (no transitive dependencies), default: false
 
 **Example:**
 ```json
 {
   "type": "Product",
-  "field": "id"
+  "field": "id",
+  "direct": true
 }
 ```
 
@@ -64,11 +66,13 @@ Lists all dependencies on a particular type or field with detailed information.
 - `type` (required): The GraphQL type to query dependencies for
 - `field` (optional): Specific field within the type to query
 - `schemaFile` (optional): Specific schema file to query (uses most recent if not specified)
+- `direct` (optional): Show only direct dependencies (no transitive dependencies), default: false
 
 **Example:**
 ```json
 {
-  "type": "Product"
+  "type": "Product",
+  "direct": true
 }
 ```
 

@@ -71,6 +71,11 @@ class FGQLAnalyzerServer {
                 type: 'string',
                 description: 'Optional: specific schema file to query (uses most recent if not specified)',
               },
+              direct: {
+                type: 'boolean',
+                description: 'Optional: show only direct dependencies (no transitive dependencies)',
+                default: false,
+              },
             },
             required: ['type'],
           },
@@ -92,6 +97,11 @@ class FGQLAnalyzerServer {
               schemaFile: {
                 type: 'string',
                 description: 'Optional: specific schema file to query (uses most recent if not specified)',
+              },
+              direct: {
+                type: 'boolean',
+                description: 'Optional: show only direct dependencies (no transitive dependencies)',
+                default: false,
               },
             },
             required: ['type'],
@@ -186,12 +196,13 @@ class FGQLAnalyzerServer {
   }
 
   async countDependencies(args) {
-    const { type, field, schemaFile } = args;
+    const { type, field, schemaFile, direct = false } = args;
 
     try {
       const options = {
         field,
         schema: schemaFile,
+        direct,
       };
 
       const results = await queryDependencies(type, options);
@@ -213,12 +224,13 @@ class FGQLAnalyzerServer {
   }
 
   async listDependencies(args) {
-    const { type, field, schemaFile } = args;
+    const { type, field, schemaFile, direct = false } = args;
 
     try {
       const options = {
         field,
         schema: schemaFile,
+        direct,
       };
 
       const results = await queryDependencies(type, options);
