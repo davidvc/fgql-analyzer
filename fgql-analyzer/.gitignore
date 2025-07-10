@@ -56,3 +56,6 @@ test-nested.graphql
 test-key.graphql
 final-test.graphql
 test-mock.graphql
+sdl.graphqls
+
+

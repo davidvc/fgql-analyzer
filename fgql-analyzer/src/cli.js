@@ -11,14 +11,42 @@ import path from 'path';
 const program = new Command();
 
 program
-  .name('fgql-analyzer')
+  .name('fgq')
   .description('Analyze Federated GraphQL schemas for field dependencies')
-  .version('1.0.0');
+  .version('1.0.0')
+  .addHelpText('after', `
+Commands:
+  analyze <schema-file> [options]  Analyze a GraphQL schema file
+    -f, --force                    Force re-analysis even if cache exists
+
+  query <type> [options]           Query dependencies for a type
+    -f, --field <field>            Query specific field only
+    -s, --schema <file>            Use specific schema file (default: most recent)
+    -j, --json                     Output as JSON
+
+  list                             List all analyzed schemas
+
+  clear                            Clear all cached analyses
+
+Examples:
+  $ fgq analyze schema.graphql
+  $ fgq analyze schema.graphql --force
+  $ fgq query Product
+  $ fgq query Item --field watchCount
+  $ fgq query Product --json
+  $ fgq query Product -s myschema.graphql
+
+For more information, run any command with --help`);
 
 program
   .command('analyze <schema-file>')
   .description('Analyze a FGQL schema file and cache the results')
   .option('-f, --force', 'Force re-analysis even if cache exists')
+  .addHelpText('after', `
+Examples:
+  $ fgq analyze schema.graphql              # Analyze schema and cache results
+  $ fgq analyze schema.graphql --force      # Re-analyze even if already cached
+  $ fgq analyze ./examples/products.graphql # Analyze schema from examples directory`)
   .action(async (schemaFile, options) => {
     try {
       const absolutePath = path.resolve(schemaFile);
@@ -63,6 +91,12 @@ program
   .option('-s, --schema <file>', 'Schema file to query (uses most recent if not specified)')
   .option('-f, --field <field>', 'Query dependencies for a specific field')
   .option('-j, --json', 'Output results as JSON')
+  .addHelpText('after', `
+Examples:
+  $ fgq query Product                    # All fields that depend on any Product field
+  $ fgq query Item --field watchCount    # Only fields that depend on Item.watchCount
+  $ fgq query Product --json             # Output as JSON for scripting
+  $ fgq query Product -s myschema.graphql # Query specific schema file`)
   .action(async (type, options) => {
     try {
       const results = await queryDependencies(type, options);
