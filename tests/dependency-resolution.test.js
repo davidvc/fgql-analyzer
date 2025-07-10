@@ -185,15 +185,17 @@ describe("Dependency Resolution", async () => {
       "ListingReference.listing should depend on Listing"
     );
 
-    // There should also be a dependency from CartItem.listing on Listing
-    // since it uses ListingReference which requires Listing
+    // CartItem.listing should NOT have a direct dependency on Listing
+    // It depends on ListingReference, which in turn depends on Listing
+    // These are separate, not transitive dependencies
     const cartItemDeps = listingDeps.filter(
       (dep) =>
         dep.dependingType === "CartItem" && dep.dependingField === "listing"
     );
-    assert.ok(
-      cartItemDeps.length > 0,
-      "CartItem.listing should have a dependency on Listing"
+    assert.strictEqual(
+      cartItemDeps.length,
+      0,
+      "CartItem.listing should NOT have a direct dependency on Listing (it depends on ListingReference)"
     );
   });
 

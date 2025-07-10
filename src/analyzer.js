@@ -122,6 +122,20 @@ export async function analyzeSchema(schemaContent, filePath) {
     }
 
     type.fields.forEach((field, fieldName) => {
+      // First, record the field type dependency
+      if (field.type && analysis.types.has(field.type)) {
+        // This field references another type in the schema
+        analysis.dependencies.push({
+          dependingType: typeName,
+          dependingField: fieldName,
+          dependingSubgraph: "NONE",
+          dependedType: field.type,
+          dependedField: fieldName, // For field type dependencies, the depended field is the same as the depending field
+          directive: "field_type",
+          fieldPath: fieldName,
+        });
+      }
+
       field.directives.forEach((directive) => {
         const directiveName = directive.name.value;
 
